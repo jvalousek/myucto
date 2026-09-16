@@ -3,10 +3,29 @@
 #   - db služba vyhozena (DB je mimo stack)
 #   - ports vyhozeny (routing dělá Traefik přes dokploy-network)
 #   - DB/APP konfigurace přes ENV, ne přes cfg.docker.php mount
+#   - app se STAVÍ z tohoto repa, nestahuje se hotový image (viz `build` níže)
 
 services:
   app:
-    image: ghcr.io/radekhulan/myucto:latest   # v produkci pinni verzi, např. :3.6.0
+    # Build z repa, které si Dokploy naklonoval — NE `image:` z registry.
+    #
+    # Dřív tu stálo `image: ghcr.io/radekhulan/myucto:latest`. To je image
+    # UPSTREAM projektu a publikuje se jen na push tagu `v*.*.*`, takže deploy
+    # po pushnutí do masteru tahal pořád tentýž starý build a změny v repu se
+    # na produkci neobjevily vůbec.
+    #
+    # `pull_policy: build` je tu schválně: bez něj by `docker compose up`
+    # existující lokální tag jen převzal a znovu by nestavěl.
+    #
+    # Build potřebuje místo a RAM: frontend stage jede `pnpm build` s haldou
+    # 3 GB (NODE_OPTIONS v Dockerfile.alpine), takže na hostu pod ~4 GB volné
+    # paměti padá na „heap out of memory". První build je v řádu minut, další
+    # jedou z layer cache.
+    build:
+      context: .
+      dockerfile: Dockerfile.alpine
+    image: ${APP_IMAGE:-myucto:latest}   # jméno výsledku; na hostu s více stacky přepiš
+    pull_policy: build
     restart: unless-stopped
     # Žádný `depends_on` — DB je mimo stack. Čekání řeší retry smyčka v entrypointu.
     volumes:
