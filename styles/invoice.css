@@ -71,7 +71,13 @@ table.head {
     border-collapse: collapse;
     margin: 0;
 }
-table.head td { vertical-align: top; padding: 0; }
+/* `line-height` MUSÍ stát na buňce, ne se dědit z `body`.
+   mPDF ho do bloků uvnitř tabulky nepropaguje a bezejmenné `<div>`y adresy pak
+   sází na 1.2 — hlavička se proti předloze scvrkne o 2.5 pt na řádek. Zápis na
+   `<div>` přes potomkovský selektor (`td.head-left div`) mPDF ignoruje; třída
+   přímo na elementu (`.spacer-*`, `.head-gap`) funguje a tenhle leading přebije,
+   protože zděděná hodnota prohrává s deklarovanou. */
+table.head td { vertical-align: top; padding: 0; line-height: 1.5; }
 
 table.head td.head-left {
     width: 93.8mm;
@@ -85,7 +91,7 @@ table.head td.head-right { padding-left: 16.4mm; }
    řádku řídí výhradně `font-size` (stejný trik jako .spacer-*). Odběratel tak má
    na dokladu stálou pozici bez ohledu na to, kolik řádků zabral dodavatel
    v protějším sloupci. */
-.head-gap { font-size: 76pt; line-height: 1; }
+.head-gap { font-size: 73.6pt; line-height: 1; }
 
 /* Typ dokladu a číslo v rámečku na jednom řádku: popisek vlevo, rámeček na
    pravém okraji sazby. */
@@ -121,14 +127,26 @@ table.num-box td {
 .head.cancellation .doc-type,
 .head.cancellation table.num-box td { text-decoration: line-through; }
 
-/* Čárový kód s číslem dokladu pod rámečkem (Code128, mPDF tag <barcode>). */
-.barcode-wrap { text-align: right; margin-top: 1.2mm; }
+/* Čárový kód s číslem dokladu pod rámečkem (Code128, mPDF tag <barcode>).
+   Je to jednobuňková tabulka stejné šířky jako rámeček, aby kód stál na jeho ose.
+   Prostý `<div class="barcode-wrap" style="text-align:center">` nestačí: mPDF
+   vnutí blokům uvnitř buňky zarovnání TÉ buňky (`td.doc-number` je zarovnaná
+   doprava) a přebije i inline styl — kód se pak lepí k pravému okraji sazby.
+   Vlastní buňka zarovnání drží. Rozměry kódu (size/height) jsou v šabloně u tagu,
+   ty mPDF z CSS nebere vůbec. */
+table.barcode-wrap {
+    width: 33mm;
+    margin-left: auto;
+    margin-top: 1.2mm;
+    border-collapse: collapse;
+}
+table.barcode-wrap td { padding: 0; text-align: center; }
 
 .parent-ref { font-size: 8pt; margin-top: 1.5mm; text-align: right; }
 
-/* ISDOC badge (doklad s přiloženým strojovým souborem) a badge rekonstrukce
-   přijaté faktury. Stojí nad popiskem strany, takže bez nich se blok posune. */
-.isdoc-badge,
+/* Badge rekonstrukce přijaté faktury. Stojí nad popiskem strany, takže bez něj
+   se blok posune. (Badge „ISDOC" na vystavené faktuře ZRUŠEN — příloha je
+   strojová, prohlížeč ji ohlásí sám; viz komentář v invoice.twig.) */
 .reconstruction-badge {
     display: inline-block;
     border: 0.8pt solid #DCDCDC;
@@ -140,6 +158,14 @@ table.num-box td {
 }
 
 /* ═══ STRANY ═══════════════════════════════════════════════════════════════ */
+
+/* Blok odběratele stojí ve vlastní jednobuňkové tabulce, a to kvůli mPDF:
+   za VNOŘENOU tabulkou (`table.doc-title` s typem a číslem dokladu) zapomene
+   `line-height` buňky a zbytek obsahu sází na výchozí proklad písma — odběratel
+   se pak proti dodavateli v protějším sloupci opticky scvrkne. Nová buňka stav
+   resetuje a leading se vrátí. Zápis `line-height` na ty `<div>`y samotné to
+   nevyřeší (ani inline stylem) — mPDF ho u bloků bere jen z buňky. */
+table.party-block { width: 100%; border-collapse: collapse; }
 
 .party-label { font-size: 8pt; font-weight: bold; }
 .party-name  { font-size: 8pt; font-weight: bold; }
@@ -162,7 +188,11 @@ td.contact-label { width: 16.7mm; }
 table.head td.paymethod-left {
     width: 93.8mm;
     border-right: 0.5pt solid #DCDCDC;
-    padding: 14.6mm 4mm 1.5mm 0.8mm;
+    /* Bez horního paddingu: odstup nad řádkem dělá už blok odběratele vedle,
+       který sahá níž. Dokud se hlavička sázela na scvrklý proklad, chybějící
+       výšku doháněl padding 14.6 mm — s prokladem podle předlohy by tentýž
+       padding odsunul celý platební pruh o 15 mm pod jeho místo. */
+    padding: 0 4mm 1.5mm 0.8mm;
     vertical-align: bottom;
 }
 .paymethod-label { padding-right: 5mm; }

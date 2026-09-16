@@ -133,7 +133,8 @@ final class InvoicePdfRenderer
 
         // ISDOC attachment: vyrobíme XML v paměti a předáme do SetAssociatedFiles
         // jako 'content' (žádný tmp soubor — mPDF API umí XML zpracovat in-memory).
-        // Twigu předáme jen boolean flag, ať může vykreslit vizuální badge.
+        // Na stránku se nic nekreslí; příloha je strojová a prohlížeč ji ohlásí
+        // sám (viz komentář v invoice.twig).
         // Gating: jen pokud supplier má embed_isdoc=1 a faktura je v CZK (ISDOC
         // je CZ standard, EUR/USD doklady by accounting SW jen zmátly).
         $isdocXml = null;
@@ -147,7 +148,7 @@ final class InvoicePdfRenderer
             }
         }
 
-        $rendered = $this->renderHtmlAndCss($invoice, $isdocXml !== null);
+        $rendered = $this->renderHtmlAndCss($invoice);
 
         $mpdf = $this->newMpdf($tmpDir);
         // PDF metadata — bez Title/Author, aby Chrome viewer nezobrazoval text nad PDF.
@@ -228,7 +229,7 @@ final class InvoicePdfRenderer
             @mkdir(dirname($outputPath), 0755, true);
         }
 
-        $rendered = $this->renderHtmlAndCss($invoice, false, false);
+        $rendered = $this->renderHtmlAndCss($invoice, includeWorkReport: false);
         $mpdf = $this->newMpdf($tmpDir);
         $mpdf->SetTitle('');
         $mpdf->SetAuthor('');
@@ -259,7 +260,6 @@ final class InvoicePdfRenderer
      */
     public function renderHtmlAndCss(
         array $invoice,
-        bool $hasIsdocAttachment = false,
         bool $includeWorkReport = true,
     ): array
     {
@@ -269,7 +269,6 @@ final class InvoicePdfRenderer
         $body = $this->renderHtml(
             $invoice,
             includeCss: false,
-            hasIsdocAttachment: $hasIsdocAttachment,
             includeWorkReport: $includeWorkReport,
         );
         return ['body' => $body, 'css' => $css];
@@ -278,7 +277,6 @@ final class InvoicePdfRenderer
     public function renderHtml(
         array $invoice,
         bool $includeCss = true,
-        bool $hasIsdocAttachment = false,
         bool $includeWorkReport = true,
     ): string
     {
@@ -393,7 +391,6 @@ final class InvoicePdfRenderer
             // Patička: kdo doklad vystavil. Autor dokladu, ne stahující uživatel —
             // viz issuedBy().
             'issued_by'         => $this->issuedBy($invoice),
-            'isdoc_attachment'  => $hasIsdocAttachment, // bool — badge gate
             'hide_pdf_czk_recap'=> $hidePdfCzkRecap,
             'pdf_czk_vat'       => $pdfCzkVat,
             // Doložka o odvodu daně v režimu OSS (§ 110a a násl. ZDPH). Doklad s cizí
@@ -659,15 +656,29 @@ final class InvoicePdfRenderer
             if (is_array($snap)) {
                 $row = array_merge($live, $snap);
                 // Snapshot je primární (historický stav účtu), ALE prázdná hodnota ve snapshotu
-                // nesmí přebít neprázdné live pole. Týká se hlavně `bank_name`: starší faktury
-                // se vystavily dřív, než CRPDPH enrichment doplnil název banky do currencies →
-                // snapshot má bank_name='' a array_merge ho nechá vyhrát (banka se netiskne).
-                // Název banky je jen popisek bankovního kódu, takže ho doplníme z live JEN když
-                // jde o stejný účet (shodný bank_code) — jinak by mohl popisovat jiný účet.
-                $sameAccount = (string) ($snap['bank_code'] ?? '') === (string) ($live['bank_code'] ?? '')
-                    && (string) ($snap['iban'] ?? '') === (string) ($live['iban'] ?? '');
-                if ($sameAccount) {
-                    foreach (['bank_name', 'bic'] as $k) {
+                // nesmí přebít neprázdné live pole. Doklad vystavený dřív, než se do nastavení
+                // doplnil IBAN, SWIFT nebo název banky, má v snapshotu prázdno a array_merge
+                // ho nechá vyhrát — na faktuře pak IBAN chybí napořád, i když ho firma
+                // v nastavení dávno má.
+                //
+                // Doplňujeme JEN prázdná pole a JEN u prokazatelně TÉHOŽ účtu. Tuzemské číslo
+                // a IBAN jsou dva zápisy jednoho účtu, takže shoda kteréhokoli z nich stačí;
+                // rozdílný IBAN na obou stranách je naopak důkaz, že jde o jiný účet, a tam
+                // se ze snapshotu nesahá na nic. Hodnotu, kterou snapshot NESE, nepřepisujeme
+                // nikdy — to je ten immutable záznam o tom, kam se mělo platit.
+                $norm = static fn (mixed $v): string => strtoupper(preg_replace('/\s+/', '', (string) $v) ?? '');
+
+                $snapDomestic = $norm($snap['account_number'] ?? '') . '/' . $norm($snap['bank_code'] ?? '');
+                $liveDomestic = $norm($live['account_number'] ?? '') . '/' . $norm($live['bank_code'] ?? '');
+                $snapIban = $norm($snap['iban'] ?? '');
+                $liveIban = $norm($live['iban'] ?? '');
+
+                $ibanConflict  = $snapIban !== '' && $liveIban !== '' && $snapIban !== $liveIban;
+                $domesticMatch = $snapDomestic !== '/' && $snapDomestic === $liveDomestic;
+                $ibanMatch     = $snapIban !== '' && $snapIban === $liveIban;
+
+                if (!$ibanConflict && ($domesticMatch || $ibanMatch)) {
+                    foreach (['bank_name', 'bic', 'iban'] as $k) {
                         if (empty($row[$k]) && !empty($live[$k])) {
                             $row[$k] = $live[$k];
                         }

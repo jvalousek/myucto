@@ -58,12 +58,11 @@
 {# ─── HLAVIČKA + STRANY ─── #}
 <table class="head{% if invoice.invoice_type == 'cancellation' %} cancellation{% endif %}">
   <tr>
+    {# Přiložený ISDOC se na doklad NETISKNE. Je to strojová příloha (mPDF ji
+       přidává přes SetAssociatedFiles() do PDF/A-3 /AF + /Names /EmbeddedFiles)
+       a prohlížeč ji ohlásí sponkou v seznamu příloh — na papíře by badge „ISDOC"
+       byl jen šum nad jménem dodavatele. Předloha ho taky nemá. #}
     <td class="head-left">
-      {% if isdoc_attachment %}
-        {# Vizuální badge — samotný embedded ISDOC soubor přidává mPDF přes
-           SetAssociatedFiles() v PDF/A-3 /AF + /Names /EmbeddedFiles. #}
-        <div class="isdoc-badge">ISDOC</div>
-      {% endif %}
       <div class="party-label">{{ t('Dodavatel', 'Supplier') }}</div>
       <div class="party-name">{{ supplier.company_name }}</div>
       {% if supplier.display_name and supplier.display_name != supplier.company_name %}
@@ -123,10 +122,13 @@
             {% if invoice.varsymbol %}
             <table class="num-box"><tr><td>{{ invoice.varsymbol }}</td></tr></table>
             {# Čárový kód s číslem dokladu — strojové čtení při zakládání došlé pošty
-               u příjemce. C128B zvládne i číslo s pomlčkou (formát 2026-0042). #}
-            <div class="barcode-wrap">
-              <barcode code="{{ invoice.varsymbol }}" type="C128B" size="0.52" height="0.3" />
-            </div>
+               u příjemce. C128B zvládne i číslo s pomlčkou (formát 2026-0042).
+               `size` a `height` jsou proměřené podle předlohy (65.3 × 7.4 pt) —
+               mPDF je bere jen z atributů tagu, ze stylopisu ne. Nižší kód se
+               čtečce hůř trefuje a na stránce vypadá jako šedý proužek. #}
+            <table class="barcode-wrap"><tr><td>
+              <barcode code="{{ invoice.varsymbol }}" type="C128B" size="0.45" height="0.61" />
+            </td></tr></table>
             {% endif %}
             {% if parent_varsymbol %}
               <div class="parent-ref">{{ t('k faktuře', 'to invoice') }} {{ parent_varsymbol }}</div>
@@ -137,6 +139,9 @@
 
       <div class="head-gap">&nbsp;</div>
 
+      {# Blok odběratele stojí ve VLASTNÍ jednobuňkové tabulce — viz .party-block
+         ve stylopisu. Bez ní by mu mPDF sebral proklad. #}
+      <table class="party-block"><tr><td>
       <div class="party-label">{{ t('Odběratel', 'Customer') }}</div>
       <div class="party-name">{{ client.company_name }}</div>
       {% if client.first_name or client.last_name %}
@@ -164,6 +169,7 @@
           <span class="dic-gap">{{ client_dic_sk ? t('IČ DPH', 'VAT ID') : t('DIČ', 'VAT ID') }}: {{ client.dic }}</span>
         {% endif %}
       </div>
+      </td></tr></table>
     </td>
   </tr>
   {# Způsob úhrady je DRUHÝ ŘÁDEK téže tabulky, ne samostatný blok pod ní: dělicí
@@ -197,8 +203,10 @@
         {% if bank.account_number %}
           <div class="payband-line">{{ bank.account_number }}{% if bank.bank_code %}/{{ bank.bank_code }}{% endif %}</div>
         {% endif %}
+        {# IBAN po čtveřicích — tak ho sází předloha i banky. Přepis z papíru se
+           takhle dá kontrolovat po skupinách, souvislých 24 znaků ne. #}
         {% if bank.iban %}
-          <div class="payband-line">IBAN: {{ bank.iban }}</div>
+          <div class="payband-line">IBAN: {{ bank.iban|replace({' ': ''})|split('', 4)|join(' ') }}</div>
         {% endif %}
         {% if bank.bic %}
           <div class="payband-line">SWIFT: {{ bank.bic }}</div>

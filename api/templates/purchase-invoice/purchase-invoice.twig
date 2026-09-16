@@ -85,6 +85,8 @@
 
       <div class="head-gap">&nbsp;</div>
 
+      {# Vlastní jednobuňková tabulka kvůli prokladu — viz .party-block ve stylopisu. #}
+      <table class="party-block"><tr><td>
       <div class="party-label">{% if locale == 'en' %}Customer (us){% else %}Odběratel (my){% endif %}</div>
       <div class="party-name">{{ our_company.company_name }}</div>
       <div>{{ our_company.street }}</div>
@@ -102,6 +104,7 @@
           {% endif %}
         {% endif %}
       </div>
+      </td></tr></table>
     </td>
   </tr>
   {# Způsob úhrady je DRUHÝ ŘÁDEK téže tabulky — stejně jako u vystavené faktury.
