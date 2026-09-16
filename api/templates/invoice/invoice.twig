@@ -23,15 +23,20 @@
 {% set currency_symbol = currency_symbols[invoice.currency]|default(invoice.currency) %}
 
 {# ─── PATIČKA (každá stránka) ───
-   Zápis v rejstříku, kdo doklad vystavil, attribution a číslo strany. „Vystavil(a)"
-   bere autora dokladu (invoices.created_by), NE aktuálně přihlášeného uživatele:
+   Zápis v rejstříku, kdo doklad vystavil, a číslo strany. „Vystavil(a)" bere
+   autora dokladu (invoices.created_by), NE aktuálně přihlášeného uživatele:
    PDF se cachuje a servíruje opakovaně, takže údaj vázaný na toho, kdo si ho zrovna
-   stáhl, by na dokladu lhal každému dalšímu. #}
+   stáhl, by na dokladu lhal každému dalšímu.
+
+   Patička vystavené faktury NENESE atribuci účetního systému — doklad jde
+   odběrateli a nástroj, ve kterém vznikl, není jeho náležitost. Rekonstrukce
+   přijaté faktury si ji naopak nechává: tam ta věta nese informaci, že doklad
+   NENÍ originál od dodavatele. #}
 <htmlpagefooter name="docfooter">
   <table class="doc-footer">
     {% if supplier.commercial_register %}
     <tr>
-      <td colspan="3" class="footer-register">{{ supplier.commercial_register }}</td>
+      <td colspan="2" class="footer-register">{{ supplier.commercial_register }}</td>
     </tr>
     {% endif %}
     <tr{% if supplier.commercial_register %} class="has-register"{% endif %}>
@@ -39,15 +44,6 @@
         {%- if issued_by -%}
           {{ t('Vystavil(a)', 'Issued by') }}: {{ issued_by }}, {{ invoice.issue_date|date(date_format) }}
         {%- endif -%}
-      </td>
-      <td class="footer-attribution">
-        <span class="page-attribution">
-          {%- if locale == 'en' -%}
-            Issued with the <a href="https://myucto.cz/">MyÚčto.cz</a> accounting system
-          {%- else -%}
-            Vystaveno v účetním systému <a href="https://myucto.cz/">MyÚčto.cz</a>
-          {%- endif -%}
-        </span>
       </td>
       <td class="footer-page">{{ t('Strana', 'Page') }} {PAGENO}/{nbpg}</td>
     </tr>
