@@ -1,0 +1,118 @@
+# myucto (nástupce myinvoice) pro Dokploy + externí MariaDB.
+# Vychází z upstream new.yaml, ale:
+#   - db služba vyhozena (DB je mimo stack)
+#   - ports vyhozeny (routing dělá Traefik přes dokploy-network)
+#   - DB/APP konfigurace přes ENV, ne přes cfg.docker.php mount
+
+services:
+  app:
+    image: ghcr.io/radekhulan/myucto:latest   # v produkci pinni verzi, např. :3.6.0
+    restart: unless-stopped
+    # Žádný `depends_on` — DB je mimo stack. Čekání řeší retry smyčka v entrypointu.
+    volumes:
+      # Jediný stateful volume (single-volume layout od 3.6.0).
+      # POZOR: musí to být TEN SAMÝ volume jako u myinvoice, jinak přijdeš
+      # o storage/, log/, private/dkim/ i cfg.local.php ze setup wizardu.
+      - app-data:/data
+      # cfg.docker.php mount z upstreamu VYNECHÁN — vše jde přes ENV (12-factor).
+      # Kdybys ho chtěl, soubor musí reálně existovat v repu, jinak Docker
+      # vytvoří adresář a app spadne.
+    # ports záměrně nejsou publikované. Odkomentuj jen pro přístup napřímo
+    # na http://<ip-lxc>:8080 bez domény.
+    # ports:
+    #   - "${APP_PORT:-8080}:80"
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    environment:
+      TZ: ${TZ:-Europe/Prague}
+      MYINVOICE_DATA_DIR: /data
+      # Vestavěný cron. Při více replikách `app` nech zapnutý jen v jedné.
+      MYINVOICE_ENABLE_CRON: ${MYINVOICE_ENABLE_CRON:-1}
+
+      # App
+      MYINVOICE_APP_ENV: ${MYINVOICE_APP_ENV:-production}
+      # Přesná veřejná URL — jde do odkazů v e-mailech. Za Traefikem nastav natvrdo.
+      MYINVOICE_APP_URL: ${MYINVOICE_APP_URL:?MYINVOICE_APP_URL required — např. https://faktury.firma.cz}
+      # MUSÍ zůstat stejný jako u myinvoice, jinak nerozšifruješ existující data.
+      MYINVOICE_PEPPER: ${MYINVOICE_PEPPER:?MYINVOICE_PEPPER required — openssl rand -base64 32}
+      MYINVOICE_SECRET_KEY: ${MYINVOICE_SECRET_KEY:-}
+
+      # Externí MariaDB. DB_NAME nech na stávající DB, aby proběhla migrace
+      # nad existujícími daty (default upstreamu je `myucto` — to by založilo prázdnou).
+      MYINVOICE_DB_HOST: ${DB_HOST:?DB_HOST required — IP LXC s MariaDB, např. 10.0.0.42}
+      MYINVOICE_DB_PORT: ${DB_PORT:-3306}
+      MYINVOICE_DB_NAME: ${DB_NAME:-myinvoice}
+      MYINVOICE_DB_USER: ${DB_USER:-myinvoice}
+      MYINVOICE_DB_PASS: ${DB_PASSWORD:?DB_PASSWORD required}
+
+      # Redis (volitelný, profil `redis`). Bez ENABLED=1 jede DB fallback:
+      # sessiony v `sessions`, rate limit v `rate_limit_counters`.
+      MYINVOICE_REDIS_ENABLED: ${MYINVOICE_REDIS_ENABLED:-0}
+      MYINVOICE_REDIS_HOST: ${MYINVOICE_REDIS_HOST:-redis}
+      MYINVOICE_REDIS_PORT: ${MYINVOICE_REDIS_PORT:-6379}
+      MYINVOICE_REDIS_AUTH: ${MYINVOICE_REDIS_AUTH:-}
+      MYINVOICE_REDIS_DB: ${MYINVOICE_REDIS_DB:-0}
+      MYINVOICE_REDIS_PREFIX: ${MYINVOICE_REDIS_PREFIX:-myinvoice:}
+
+      # Retry migrací na startu (z původního configu; u externí DB se hodí).
+      MYINVOICE_MIGRATE_ATTEMPTS: ${MYINVOICE_MIGRATE_ATTEMPTS:-20}
+      MYINVOICE_MIGRATE_DELAY: ${MYINVOICE_MIGRATE_DELAY:-3}
+
+      # Cookies — Traefik terminuje TLS a posílá X-Forwarded-Proto: https.
+      MYINVOICE_SESSION_COOKIE_SECURE: ${MYINVOICE_SESSION_COOKIE_SECURE:-true}
+      MYINVOICE_SESSION_COOKIE_NAME: ${MYINVOICE_SESSION_COOKIE_NAME:-__Host-myinvoice_session}
+
+      # MFA, passwordless login a zámek session (volitelné).
+      MYINVOICE_AUTH_REQUIRE_MFA: ${MYINVOICE_AUTH_REQUIRE_MFA:-}
+      MYINVOICE_AUTH_MFA_METHODS: ${MYINVOICE_AUTH_MFA_METHODS:-}
+      MYINVOICE_AUTH_PASSWORDLESS_LOGIN: ${MYINVOICE_AUTH_PASSWORDLESS_LOGIN:-}
+      MYINVOICE_SESSION_LOCK_AFTER_MINUTES: ${MYINVOICE_SESSION_LOCK_AFTER_MINUTES:-}
+
+      # SMTP (volitelné — lze doplnit později v Nastavení).
+      MYINVOICE_SMTP_HOST: ${MYINVOICE_SMTP_HOST:-}
+      MYINVOICE_SMTP_PORT: ${MYINVOICE_SMTP_PORT:-}
+      MYINVOICE_SMTP_ENCRYPTION: ${MYINVOICE_SMTP_ENCRYPTION:-}
+      MYINVOICE_SMTP_AUTH: ${MYINVOICE_SMTP_AUTH:-}
+      MYINVOICE_SMTP_USER: ${MYINVOICE_SMTP_USER:-}
+      MYINVOICE_SMTP_PASS: ${MYINVOICE_SMTP_PASS:-}
+      MYINVOICE_SMTP_FROM_EMAIL: ${MYINVOICE_SMTP_FROM_EMAIL:-}
+      MYINVOICE_SMTP_FROM_NAME: ${MYINVOICE_SMTP_FROM_NAME:-}
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["redis"]
+    # maxmemory + policy jsou povinné: bez limitu si Redis s AOF vezme veškerou
+    # RAM a nechá se OOM-killnout místo evikce. `volatile-lru` evikuje jen klíče s TTL.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - volatile-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+networks:
+  # Síť, kterou zakládá Dokploy. Bez ní na službu nedosáhne Traefik.
+  dokploy-network:
+    external: true
+
+volumes:
+  app-data:
+  redis-data:
