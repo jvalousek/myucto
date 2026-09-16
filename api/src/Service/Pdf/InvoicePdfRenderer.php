@@ -83,10 +83,13 @@ final class InvoicePdfRenderer
             $invoiceId,
         );
 
-        // Cache je validní jen když je novější než šablona, CSS a kód renderu
+        // Cache je validní jen když je novější než šablona, CSS a kód renderu.
+        // `work_report.twig` do seznamu patří: faktura s výkazem víceprací ho
+        // vkládá jako druhou stranu, takže jeho změna mění i tenhle doklad.
         $tplMtime = max(
             @filemtime(Bootstrap::rootDir() . '/styles/invoice.css') ?: 0,
             @filemtime(Bootstrap::rootDir() . '/api/templates/invoice/invoice.twig') ?: 0,
+            @filemtime(Bootstrap::rootDir() . '/api/templates/invoice/work_report.twig') ?: 0,
             @filemtime(__DIR__ . '/TimeBillingPdfPresenter.php') ?: 0,
             @filemtime(__FILE__) ?: 0,
         );

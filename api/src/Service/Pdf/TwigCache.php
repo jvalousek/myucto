@@ -13,18 +13,30 @@ use MyInvoice\Infrastructure\Config\RuntimePaths;
  * a spouští přes `eval()`. Se zapnutou cache se zkompilovaná šablona uloží na
  * disk a načte přes `include`, takže ji chytne i OPcache.
  *
- * Nepatří do Redisu — je to lokální soubor, ne sdílený stav. Cache je obsahově
- * adresovaná (Twig si klíčuje sám podle jména a zdroje šablony + verze Twigu),
- * takže nemá TTL ani invalidaci; smazání adresáře je vždy bezpečné.
+ * Nepatří do Redisu — je to lokální soubor, ne sdílený stav. Smazání adresáře
+ * je vždy bezpečné; nejbližší render si šablony zkompiluje znovu.
  */
 final class TwigCache
 {
     /**
      * Volby do konstruktoru `Twig\Environment`.
      *
-     * `auto_reload` nastavujeme EXPLICITNĚ — jinak si ho Twig odvodí od `debug`,
-     * které tu nikde nezapínáme, a vývojář by po editaci šablony viděl pořád
-     * starou zkompilovanou verzi.
+     * `auto_reload` nastavujeme EXPLICITNĚ a VŽDY na `true` — v produkci stejně
+     * jako ve vývoji. Twig si klíčuje zkompilovanou šablonu podle její CESTY
+     * (`FilesystemLoader::getCacheKey()` vrací relativní path, `FilesystemCache`
+     * ji jen zahashuje), NE podle zdroje. S vypnutým `auto_reload` proto
+     * `Environment::loadTemplate()` načte starý zkompilovaný soubor bez jediné
+     * kontroly a změna šablony se neprojeví NIKDY.
+     *
+     * V Dockeru to není teoretická vada: `storage/` leží na persistentním
+     * volume, takže cache přežije výměnu image a nový deploy sází pořád starý
+     * doklad. Přesně tak zůstal po nasazení neviditelný nový layout faktury.
+     *
+     * Cena za správnost je jeden `filemtime()` na šablonu a render — proti běhu
+     * mPDF neměřitelná. Navíc tím `FilesystemCache` dostane
+     * FORCE_BYTECODE_INVALIDATION, tedy `opcache_invalidate()` při zápisu; bez
+     * něj by při `opcache.validate_timestamps=0` (produkční ini image) i nově
+     * zkompilovaná šablona běžela ze starých opkódů.
      *
      * @return array{cache:string|false,auto_reload:bool}
      */
@@ -39,13 +51,7 @@ final class TwigCache
 
         return [
             'cache'       => $dir,
-            'auto_reload' => self::isDev(),
+            'auto_reload' => true,
         ];
-    }
-
-    private static function isDev(): bool
-    {
-        $env = getenv('MYINVOICE_APP_ENV');
-        return !is_string($env) || $env === '' || $env !== 'production';
     }
 }
