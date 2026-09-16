@@ -181,8 +181,6 @@ final class TimeBillingPdfPresenterTest extends TestCase
             'decimal_sep' => ',',
             'thousand_sep' => "\u{00A0}",
             'css' => '',
-            'logo_path' => null,
-            'logo_show_name' => false,
         ]);
 
         self::assertStringContainsString('>0:01</td>', $html);

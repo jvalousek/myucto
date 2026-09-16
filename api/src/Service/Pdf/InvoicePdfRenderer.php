@@ -12,7 +12,6 @@ use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Repository\SupplierPaymentQrSettingsRepository;
 use MyInvoice\Repository\WorkReportRepository;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
-use MyInvoice\Service\Branding\AccentColor;
 use MyInvoice\Service\Export\IsdocExporter;
 use MyInvoice\Service\Invoice\CzkRecap;
 use MyInvoice\Service\Invoice\SnapshotBuilder;
@@ -124,7 +123,6 @@ final class InvoicePdfRenderer
             $invoice = $this->refreshSnapshots($invoice);
         }
 
-        $rootDir = Bootstrap::rootDir();
         $tmpDir = \MyInvoice\Infrastructure\Config\RuntimePaths::storage('cache/mpdf');
         if (!is_dir($tmpDir)) {
             @mkdir($tmpDir, 0755, true);
@@ -264,8 +262,6 @@ final class InvoicePdfRenderer
     {
         $cssPath = Bootstrap::rootDir() . '/styles/invoice.css';
         $css = is_file($cssPath) ? (string) file_get_contents($cssPath) : '';
-        // Per-supplier branding barva — přebarví fialové akcenty na zvolený odstín.
-        $css .= $this->brandAccentCss($this->resolveSupplier($invoice));
         // Renderuj template BEZ inline <style> bloku — CSS pošleme do mPDF zvlášť
         $body = $this->renderHtml(
             $invoice,
@@ -329,15 +325,10 @@ final class InvoicePdfRenderer
         $css = $includeCss
             ? (is_file($cssPath) ? (string) file_get_contents($cssPath) : '')
             : '';
-        if ($includeCss && $css !== '') {
-            $css .= $this->brandAccentCss($supplierData);
-        }
 
         // Locale pro `t()` — čte ho closure registrovaná v twig() (viz komentář tam).
         $this->locale = (string) $locale;
         $twig = $this->twig();
-
-        $logoPath = $this->resolveLogoPath($supplierData, (int) ($invoice['supplier_id'] ?? 0));
 
         $clientCountry = strtoupper(trim((string) ($clientData['country_iso2'] ?? '')));
         $hidePdfCzkRecap = $clientCountry !== '' && $clientCountry !== 'CZ';
@@ -396,10 +387,9 @@ final class InvoicePdfRenderer
             // drží celé číslo „298 833,00" na jednom řádku spolehlivě.
             'thousand_sep'      => $locale === 'en' ? ',' : "\u{00A0}",
             'css'               => $css,
-            'logo_path'         => $logoPath,
-            // Opt-in: vedle loga vykreslit i název firmy (migrace 0058). Jen když logo
-            // reálně je — bez loga se název ukazuje vždy (textový brand-name fallback).
-            'logo_show_name'    => $logoPath !== null && !empty($supplierData['pdf_logo_show_name']),
+            // Patička: kdo doklad vystavil. Autor dokladu, ne stahující uživatel —
+            // viz issuedBy().
+            'issued_by'         => $this->issuedBy($invoice),
             'isdoc_attachment'  => $hasIsdocAttachment, // bool — badge gate
             'hide_pdf_czk_recap'=> $hidePdfCzkRecap,
             'pdf_czk_vat'       => $pdfCzkVat,
@@ -469,28 +459,31 @@ final class InvoicePdfRenderer
     }
 
     /**
-     * Per-supplier branding accent — přebarví fialové akcenty PDF (#3B2D83 + sekundární
-     * labely #6753AE) na barvu zvolenou dodavatelem (`email_accent_color`). Vrací override
-     * CSS blok připojovaný ZA base invoice.css (vyšší priorita díky pořadí + stejná
-     * specificita).
+     * Kdo doklad vystavil — pro patičku dokladu.
      *
-     * Gating stejný jako logo: jen když má dodavatel zapnutý branding toggle
-     * (`email_branding_enabled`) a nedefaultní hex barvu — pro #3B2D83 negenerujeme nic,
-     * ten je už v base CSS.
+     * Bere AUTORA dokladu (`invoices.created_by`), ne přihlášeného uživatele: PDF se
+     * cachuje a servíruje opakovaně, takže údaj vázaný na toho, kdo si ho zrovna
+     * stáhl, by na dokladu lhal každému dalšímu čtenáři.
      *
-     * Sémantické barvy (dobropis červená .head.credit-note, storno šedá .cancellation,
-     * RC amber, UHRAZENO zelená) NEpřebarvujeme — credit-note/cancellation selektory mají
-     * vyšší specificitu (2 třídy), takže tenhle 1-třídový override je nepřebije.
-     *
-     * Kromě popředí (texty/hlavičky) přebarvujeme i světlé plochy a tenké linky, které
-     * jsou v base napevno odvozené od defaultní fialové — světlé varianty akcentu počítá
-     * AccentColor::tint() (mix s bílou). Šedá paleta CZK rekapitulace (bg #F2F2F2/…) je
-     * záměrně neutrální, tu necháváme být — barvíme jen její fialové linky/text.
+     * `created_by_name` dodává rovnou {@see InvoiceRepository::find()}; dopočet z
+     * `created_by` je pro volající, kteří si pole faktury sestavili jinak (veřejný
+     * náhled, hromadný tisk, testy).
      */
-    private function brandAccentCss(array $supplier): string
+    private function issuedBy(array $invoice): ?string
     {
-        // Sdíleno s výkazem víceprací — viz PdfBranding::accentCss.
-        return PdfBranding::accentCss($supplier);
+        $name = trim((string) ($invoice['created_by_name'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $userId = (int) ($invoice['created_by'] ?? 0);
+        if ($userId <= 0) {
+            return null;
+        }
+        $stmt = $this->db->pdo()->prepare('SELECT name FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $name = trim((string) ($stmt->fetchColumn() ?: ''));
+        return $name !== '' ? $name : null;
     }
 
     /**
@@ -794,69 +787,6 @@ final class InvoicePdfRenderer
         return $stmt->fetchColumn() ?: null;
     }
 
-    private function resolveLogoPath(array $supplier, int $supplierIdFallback = 0): ?string
-    {
-        // Logo se v PDF zobrazí jen když má dodavatel zapnutý branding
-        // (`email_branding_enabled` = 1). Pokud je toggle vypnutý, vykreslí se
-        // textový brand-name fallback. Stejný toggle gatuje branding emailů,
-        // takže UX je konzistentní napříč PDF i emaily.
-        if (empty($supplier['email_branding_enabled'])) return null;
-
-        $logoPath = $supplier['logo_path'] ?? null;
-        if (!$logoPath) return null;
-
-        // SafeLogoPath: defense-in-depth proti podstrčenému logo_path (security
-        // report @andrejtomci #2). Mass-assign už je zavřený, ale tohle je 2.
-        // vrstva pro případ legacy snapshotu s bad-value nebo jiné cesty vstupu.
-        // Pokud snapshot postrádá `id`, použijeme fallback z invoice.supplier_id.
-        $supplierId = (int) ($supplier['id'] ?? $supplierIdFallback);
-        $abs = \MyInvoice\Service\Mail\SafeLogoPath::resolve((string) $logoPath, $supplierId);
-        if ($abs === null) return null;
-
-        // V PDF preferujeme SVG sidecar (vektor = crisp v libovolném zoomu/tisku);
-        // PNG je fallback pokud SVG chybí nebo obsahuje mPDF-nekompatibilní prvky.
-        //
-        // mPDF SVG renderer má známé limity: `<clipPath>`, `<use xlink:href>`,
-        // `<mask>`, `<pattern>` a `<filter>` se často vykreslí černým fillem nebo
-        // posunutě. Adobe Illustrator export tohle používá běžně. U takových SVG
-        // fallneme na PNG (rasterizovaný SupplierLogoConverterem s alfa kanálem
-        // = transparentní pozadí).
-        //
-        // `<linearGradient>` / `<radialGradient>` v blocklistu ZÁMĚRNĚ NEJSOU
-        // (issue #37): mPDF je vykresluje správně a rastrový fallback naopak
-        // rozbíjel loga, která mají vedle gradientu i `<text>` — rasterizace
-        // závisí na fontech hostu, takže na serveru bez daného fontu z loga
-        // zbylo jen barevné pozadí bez písmen.
-        // Email vždy používá PNG (Outlook/Gmail SVG nepodporují) — to řeší
-        // Mailer + InvoiceEmailVarsBuilder, ne tahle metoda.
-        $svgSibling = preg_replace('/\.png$/i', '.svg', (string) $logoPath);
-        if (is_string($svgSibling) && $svgSibling !== $logoPath) {
-            $svgAbs = \MyInvoice\Service\Mail\SafeLogoPath::resolve($svgSibling, $supplierId);
-            if ($svgAbs !== null && $this->svgIsMpdfCompatible($svgAbs)) {
-                return $svgAbs;
-            }
-        }
-        // PNG fallback: splácni alfa kanál na bílou — mPDF neumí SMask u truecolor
-        // RGBA PNG a vykreslil by průhledné pozadí černě (issue #152).
-        return PdfLogoFlattener::flattenedPath($abs);
-    }
-
-    /**
-     * Detekce SVG features, které mPDF neumí korektně vykreslit.
-     * Pokud SVG obsahuje něco z {clipPath, use, mask, pattern, filter},
-     * vrátíme false → caller fallne na PNG variantu. Gradienty mPDF zvládá,
-     * proto v blocklistu nejsou (issue #37).
-     */
-    private function svgIsMpdfCompatible(string $svgPath): bool
-    {
-        $svg = (string) @file_get_contents($svgPath);
-        if ($svg === '') return false;
-        // Známé problematické features v mPDF SVG rendereru
-        $bad = '/<(?:clipPath|use|mask|pattern|filter)\b/i';
-        return !preg_match($bad, $svg);
-    }
-
-
     /**
      * Resnapshot supplier/client/bank z live dat a uloží do invoices. Volá se při
      * forceRegenerate, aby `regenerate=1` propsalo i změny v supplier/client/banku.
@@ -1002,7 +932,6 @@ final class InvoicePdfRenderer
 
     private function cachePath(array $invoice): string
     {
-        $rootDir = Bootstrap::rootDir();
         $issueDate = new \DateTimeImmutable($invoice['issue_date']);
         // Multi-supplier: supplier subfolder zabraňuje kolizi varsymbolu mezi suppliery
         $supplierId = (int) ($invoice['supplier_id'] ?? 1);

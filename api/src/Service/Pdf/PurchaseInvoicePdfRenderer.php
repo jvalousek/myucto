@@ -16,8 +16,9 @@ use Twig\Loader\FilesystemLoader;
  * Render přijaté faktury jako PDF (naše rekonstrukce).
  *
  * **Use case:** Když nemáme originální PDF od dodavatele (importované jen metadata,
- * nebo zadané ručně), generujeme vlastní PDF pro účetní archiv. Design = stejný
- * vzhled jako naše vystavené faktury (jednotný styl, branded).
+ * nebo zadané ručně), generujeme vlastní PDF pro účetní archiv. Sází se stejným
+ * stylopisem, okraji i písmem jako vystavená faktura — složka dokladů tak drží
+ * jeden vizuální jazyk.
  *
  * Layout:
  *   - Header: vendor (jako "supplier" v rekonstrukci) + "Rekonstrukce" badge
@@ -82,13 +83,17 @@ final class PurchaseInvoicePdfRenderer
             'css'            => $css,
         ]);
 
+        // Okraje shodné s vystavenou fakturou — rekonstrukce sází týž stylopis a jeho
+        // mřížka je na ně navázaná (viz hlavička styles/invoice.css).
+        // margin_footer < margin_bottom, jinak by patička vlezla do sazby.
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
-            'margin_left' => 15,
-            'margin_right' => 15,
-            'margin_top' => 15,
-            'margin_bottom' => 18,
+            'margin_left' => 9.5,
+            'margin_right' => 11.8,
+            'margin_top' => 6.6,
+            'margin_bottom' => 20,
+            'margin_footer' => 4.4,
             'tempDir' => \MyInvoice\Infrastructure\Config\RuntimePaths::storage('mpdf-temp'),
             ...MpdfFontConfig::options(),
         ]);
@@ -159,77 +164,16 @@ final class PurchaseInvoicePdfRenderer
     }
 
     /**
-     * Reuse existing invoice.css + dodá několik tříd specifických pro reconstruction.
+     * Rekonstrukce sází TÝŽ stylopis jako vystavená faktura — žádné doplňky.
+     *
+     * Dřív se za base CSS lepil blok vlastních pravidel (`.reconstruction-badge`,
+     * `.meta-info`, barevné `.note*`). Ta jsou dnes buď přímo ve `styles/invoice.css`,
+     * nebo bez markupu v šabloně — a barvy z nich by achromatický doklad rozbily
+     * tím spíš, že base pravidla přebíjely pořadím.
      */
     private function loadCss(): string
     {
         $cssPath = Bootstrap::rootDir() . '/styles/invoice.css';
-        $base = is_file($cssPath) ? (string) file_get_contents($cssPath) : '';
-        $extra = <<<CSS
-
-/* ── PŘIJATÁ FAKTURA — rekonstrukce specific ── */
-.reconstruction-badge {
-    display: inline-block;
-    background: #FEF3C7;
-    color: #92400E;
-    font-size: 7pt;
-    font-weight: bold;
-    padding: 1.2pt 5pt;
-    border-radius: 8pt;
-    margin-top: 2mm;
-    letter-spacing: 0.5pt;
-    text-transform: uppercase;
-}
-.meta-info {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 4mm 0 5mm;
-    border-top: 0.5pt solid #E5E7EB;
-    border-bottom: 0.5pt solid #E5E7EB;
-}
-.meta-info td {
-    padding: 3mm 3mm;
-    border-right: 0.5pt solid #E5E7EB;
-    width: 25%;
-    vertical-align: top;
-}
-.meta-info td:last-child { border-right: none; }
-.meta-info .label {
-    display: block;
-    font-size: 7pt;
-    color: #6B7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5pt;
-    margin-bottom: 1mm;
-}
-.meta-info .value {
-    display: block;
-    font-size: 10pt;
-    font-weight: 500;
-    color: #15131D;
-}
-.note-above, .note-below {
-    margin: 3mm 0;
-    padding: 3mm 4mm;
-    background: #F9FAFB;
-    border-left: 2pt solid #3B2D83;
-    font-size: 9pt;
-}
-.rc-note {
-    background: #FEF3C7;
-    border-left: 3pt solid #F59E0B;
-    padding: 3mm 4mm;
-    margin: 3mm 0;
-    font-size: 9pt;
-    color: #92400E;
-}
-table.items td.empty {
-    text-align: center;
-    color: #9CA3AF;
-    padding: 8mm;
-    font-style: italic;
-}
-CSS;
-        return $base . $extra;
+        return is_file($cssPath) ? (string) file_get_contents($cssPath) : '';
     }
 }

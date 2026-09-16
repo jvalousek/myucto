@@ -3,8 +3,9 @@
    (purchase-invoice/purchase-invoice.twig) a výkaz víceprací (invoice/work_report.twig).
 
    @page se NEPOUŽÍVÁ — A4 + margins jsou nastaveny v Mpdf konstruktoru každého
-   rendereru. Doklad počítá s okraji 9.5 / 11.8 / 5 / 20 mm (L/R/T/B), tedy se
-   šířkou sazby 188.7 mm; kdo okraje změní, rozhodí sloupcovou mřížku níže.
+   rendereru. Doklad počítá s okraji 9.5 / 11.8 / 6.6 / 20 mm (L/R/T/B) a patičkou
+   na 4.4 mm, tedy se šířkou sazby 188.7 mm; kdo okraje změní, rozhodí sloupcovou
+   mřížku níže. Všechny tři renderery je mají shodné — jsou součástí stylopisu.
 
    ── Barevný systém ────────────────────────────────────────────────────────────
    Doklad je achromatický. Černá je VÝHRADNĚ text, #DCDCDC VÝHRADNĚ linky, rámečky
@@ -444,11 +445,5 @@ td.footer-page        { text-align: right; white-space: nowrap; }
 
 .page-attribution { font-size: 6.75pt; }
 
-/* Patička samostatného výkazu víceprací (neběží přes <htmlpagefooter>). */
-.footer {
-    margin-top: 6mm;
-    border-top: 0.375pt solid #DCDCDC;
-    padding-top: 1.5mm;
-    font-size: 6.75pt;
-}
+/* Název dodavatele v patičce samostatného výkazu víceprací. */
 .footer-name { font-weight: bold; }

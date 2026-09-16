@@ -9,6 +9,28 @@
 </head>
 <body>
 
+{# ─── PATIČKA (každá stránka) ───
+   Stejná sazba jako u faktury: patička běží přes <htmlpagefooter>, aby seděla na
+   spodní okraj a opakovala se i na dalších stranách dlouhého výkazu. #}
+<htmlpagefooter name="docfooter">
+  <table class="doc-footer">
+    {% if supplier.commercial_register %}
+    <tr>
+      <td colspan="2" class="footer-register">{{ supplier.commercial_register }}</td>
+    </tr>
+    {% endif %}
+    <tr{% if supplier.commercial_register %} class="has-register"{% endif %}>
+      <td class="footer-issued">
+        <span class="footer-name">{{ supplier.company_name }}</span>
+        {%- if supplier.web %} · <a href="{{ supplier.web }}">{{ supplier.web|replace({'https://': '', 'http://': ''})|trim('/') }}</a>{% endif -%}
+        {%- if supplier.email %} · {{ supplier.email }}{% endif -%}
+      </td>
+      <td class="footer-page">{{ t('Strana', 'Page') }} {PAGENO}/{nbpg}</td>
+    </tr>
+  </table>
+</htmlpagefooter>
+<sethtmlpagefooter name="docfooter" value="on" />
+
 {% set wr_has_dates = (work_report.items|filter(it => it.work_date)|length) > 0 %}
 {# Desetinná místa per sloupec: skryj „,00" jen když jsou VŠECHNY hodnoty ve sloupci celé. #}
 {% set hours_dec = (work_report.items|filter(it => it.hours != it.hours|round(0))|length) > 0 ? 2 : 0 %}
@@ -108,22 +130,6 @@
   </tbody>
 </table>
 {% endif %}
-
-<table class="doc-footer">
-  {% if supplier.commercial_register %}
-  <tr>
-    <td colspan="2" class="footer-register">{{ supplier.commercial_register }}</td>
-  </tr>
-  {% endif %}
-  <tr{% if supplier.commercial_register %} class="has-register"{% endif %}>
-    <td class="footer-issued">
-      <span class="footer-name">{{ supplier.company_name }}</span>
-      {%- if supplier.web %} · <a href="{{ supplier.web }}">{{ supplier.web|replace({'https://': '', 'http://': ''})|trim('/') }}</a>{% endif -%}
-      {%- if supplier.email %} · {{ supplier.email }}{% endif -%}
-    </td>
-    <td class="footer-page">{{ t('Strana', 'Page') }} {PAGENO}/{nbpg}</td>
-  </tr>
-</table>
 
 </body>
 </html>

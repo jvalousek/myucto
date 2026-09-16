@@ -53,12 +53,11 @@ final class WorkReportPdfRenderer
         $workReport = TimeBillingPdfPresenter::workReport($workReport);
 
         $supplier = $this->resolveSupplier($invoice);
-        // Logo + branding sdílené s fakturou (3 varianty hlavičky + accent barvy).
-        $logoPath = PdfBranding::logoPath($supplier, (int) ($invoice['supplier_id'] ?? 0));
 
+        // Stejný stylopis jako faktura — a stejně achromatický. Logo ani per-supplier
+        // accent se na doklad nekreslí (viz hlavička styles/invoice.css).
         $cssPath = Bootstrap::rootDir() . '/styles/invoice.css';
         $css = is_file($cssPath) ? (string) file_get_contents($cssPath) : '';
-        $css .= PdfBranding::accentCss($supplier);
 
         $locale = (string) ($invoice['language'] ?? 'cs');
         $this->locale = $locale;
@@ -75,23 +74,23 @@ final class WorkReportPdfRenderer
             // (white-space:nowrap mPDF v úzkých buňkách nedodrží). Sjednoceno s fakturou.
             'thousand_sep'   => $locale === 'en' ? ',' : "\u{00A0}",
             'css'            => '',
-            'logo_path'      => $logoPath,
-            'logo_show_name' => $logoPath !== null && !empty($supplier['pdf_logo_show_name']),
         ]);
 
-        $rootDir = Bootstrap::rootDir();
         $tmpDir = \MyInvoice\Infrastructure\Config\RuntimePaths::storage('cache/mpdf');
         if (!is_dir($tmpDir)) {
             @mkdir($tmpDir, 0755, true);
         }
 
+        // Okraje shodné s vystavenou fakturou — výkaz sází týž stylopis a jeho mřížka
+        // je na ně navázaná (viz hlavička styles/invoice.css a InvoicePdfRenderer::newMpdf).
         $mpdf = new Mpdf([
             'mode'          => 'utf-8',
             'format'        => 'A4',
-            'margin_top'    => 15,
-            'margin_bottom' => 18,
-            'margin_left'   => 15,
-            'margin_right'  => 15,
+            'margin_top'    => 6.6,
+            'margin_bottom' => 20,
+            'margin_left'   => 9.5,
+            'margin_right'  => 11.8,
+            'margin_footer' => 4.4,
             'tempDir'       => $tmpDir,
             'autoPageBreak' => true,
             ...MpdfFontConfig::options(),

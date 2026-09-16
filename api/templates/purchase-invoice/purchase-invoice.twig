@@ -104,6 +104,22 @@
       </div>
     </td>
   </tr>
+  {# Způsob úhrady je DRUHÝ ŘÁDEK téže tabulky — stejně jako u vystavené faktury.
+     Dělicí linka je border levé buňky, takže jde svisle přes obě části bez
+     přetržení, a mPDF má jistotu, že řádek nezačne dřív, než skončí blok
+     odběratele vedle (bez něj se pod něj podsunul platební pruh). #}
+  <tr>
+    <td class="paymethod-left">
+      <span class="paymethod-label">{% if locale == 'en' %}Payment method{% else %}Způsob úhrady{% endif %}:</span>
+      <span class="paymethod-value">
+        {%- if invoice.payment_method == 'card' -%}{% if locale == 'en' %}Card{% else %}Platební karta{% endif %}
+        {%- elseif invoice.payment_method == 'cash' -%}{% if locale == 'en' %}Cash{% else %}Hotově{% endif %}
+        {%- elseif invoice.payment_method == 'other' -%}{% if locale == 'en' %}Other{% else %}Jiný způsob{% endif %}
+        {%- else -%}{% if locale == 'en' %}Bank transfer{% else %}Převodem{% endif %}{%- endif -%}
+      </span>
+    </td>
+    <td></td>
+  </tr>
 </table>
 
 {# ─── DATA DOKLADU ─── #}
