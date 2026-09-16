@@ -1,5 +1,5 @@
 {# MyInvoice.cz — PDF samostatného výkazu víceprací (Vykaz-XYZ.pdf pro schvalovací email) #}
-{# Variables: invoice, supplier, work_report, locale, date_format, decimal_sep, thousand_sep, css, logo_path #}
+{# Variables: invoice, supplier, work_report, locale, date_format, decimal_sep, thousand_sep, css #}
 <!doctype html>
 <html lang="{{ locale|default('cs') }}">
 <head>
@@ -17,40 +17,32 @@
 
 <table class="head">
   <tr>
-    {% if logo_show_name and logo_path and logo_path is not empty %}
-      {# Logo + název firmy — dvě sousední buňky (stejně jako faktura, kvůli mPDF). #}
-      <td class="logo-img-cell"><img src="{{ logo_path }}" alt="logo" style="max-width: 16mm; max-height: 18mm;"></td>
-      <td class="logo-name">{{ supplier.display_name|default(supplier.company_name) }}</td>
-    {% else %}
-      <td class="logo">
-        {% if logo_path and logo_path is not empty %}
-          <img src="{{ logo_path }}" alt="logo" style="max-width: 72mm; max-height: 20mm;">
-        {% else %}
-          <div class="brand-name">{{ supplier.company_name }}</div>
-        {% endif %}
-      </td>
-    {% endif %}
-    <td class="meta">
-      <div class="doc-type">{{ t('Výkaz víceprací — ke schválení', 'Work report — for approval') }}</div>
-      {% if invoice.varsymbol %}
-        <div class="varsymbol-big">{{ invoice.varsymbol }}</div>
-      {% else %}
-        <div class="varsymbol-big">DRAFT-{{ invoice.id }}</div>
-      {% endif %}
+    <td class="head-left">
+      <div class="party-label">{{ t('Dodavatel', 'Supplier') }}</div>
+      <div class="party-name">{{ supplier.company_name }}</div>
+      <div>{{ supplier.street }}</div>
+      <div>{{ supplier.zip }} {{ supplier.city }}</div>
+      {% if supplier.ic %}<div class="ic-dic">{{ t('IČ', 'Reg. No.') }}: {{ supplier.ic }}</div>{% endif %}
+    </td>
+    <td class="head-right">
+      <table class="doc-title">
+        <tr>
+          <td><div class="doc-type">{{ t('Výkaz víceprací — ke schválení', 'Work report — for approval') }}</div></td>
+          <td class="doc-number">
+            <table class="num-box"><tr><td>{{ invoice.varsymbol|default('DRAFT-' ~ invoice.id) }}</td></tr></table>
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>
 </table>
 
-<div style="margin-bottom:5mm;">
-  <div style="font-size:11pt;font-weight:bold;color:#3B2D83;margin-bottom:1mm;">{{ work_report.title }}</div>
-  <div style="font-size:9pt;color:#5A5470;">
-    {% if invoice.client_company_name %}
-      {{ t('Pro', 'For') }}: <strong>{{ invoice.client_company_name }}</strong>
-    {% endif %}
-    {% if invoice.project_name %} · {{ t('Zakázka', 'Project') }}: {{ invoice.project_name }}{% endif %}
-    {% if invoice.project_number %} · {{ t('Vaše číslo', 'Your order no.') }}: {{ invoice.project_number }}{% endif %}
-    {% if invoice.contract_number %} · {{ t('Vaše smlouva', 'Your contract') }}: {{ invoice.contract_number }}{% endif %}
-  </div>
+<div class="wr-meta">
+  <div class="wr-title">{{ work_report.title }}</div>
+  {%- if invoice.client_company_name %}{{ t('Pro', 'For') }}: <strong>{{ invoice.client_company_name }}</strong>{% endif -%}
+  {%- if invoice.project_name %} · {{ t('Zakázka', 'Project') }}: {{ invoice.project_name }}{% endif -%}
+  {%- if invoice.project_number %} · {{ t('Vaše číslo', 'Your order no.') }}: {{ invoice.project_number }}{% endif -%}
+  {%- if invoice.contract_number %} · {{ t('Vaše smlouva', 'Your contract') }}: {{ invoice.contract_number }}{% endif -%}
 </div>
 
 <table class="items">
@@ -73,8 +65,8 @@
       <td class="num nowrap">{{ it.total_amount|number_format(total_dec, decimal_sep, thousand_sep) }} {{ invoice.currency }}</td>
     </tr>
     {% endfor %}
-    <tr style="background:#F4F2F8;font-weight:bold;">
-      <td style="text-align:right;" {% if wr_has_dates %}colspan="2"{% endif %}>{{ t('Celkem', 'Total') }}</td>
+    <tr class="items-sum">
+      <td class="right" {% if wr_has_dates %}colspan="2"{% endif %}>{{ t('Celkem', 'Total') }}</td>
       <td class="num nowrap">{% if work_report.total_duration_display is defined and work_report.total_duration_display is not null %}{{ work_report.total_duration_display }}{% else %}{{ work_report.total_hours|number_format(hours_dec, decimal_sep, thousand_sep) }}{% endif %} h</td>
       <td></td>
       <td class="num nowrap">{{ work_report.total_amount|number_format(total_dec, decimal_sep, thousand_sep) }} {{ invoice.currency }}</td>
@@ -87,7 +79,7 @@
 {% set mprice_dec = (work_report.materials|filter(m => m.unit_price != m.unit_price|round(0))|length) > 0 ? 2 : 0 %}
 {% set mtotal_dec = (work_report.materials|filter(m => m.total_amount != m.total_amount|round(0))|length) > 0 ? 2 : 0 %}
 
-<div style="margin-top:6mm;margin-bottom:2mm;font-size:10pt;font-weight:bold;color:#3B2D83;">{{ work_report.material_title|default(t('Materiál', 'Material')) }}</div>
+<div class="wr-section">{{ work_report.material_title|default(t('Materiál', 'Material')) }}</div>
 
 <table class="items">
   <thead>
@@ -109,17 +101,29 @@
       <td class="num nowrap">{{ m.total_amount|number_format(mtotal_dec, decimal_sep, thousand_sep) }} {{ invoice.currency }}</td>
     </tr>
     {% endfor %}
-    <tr style="background:#F4F2F8;font-weight:bold;">
-      <td style="text-align:right;" colspan="4">{{ t('Celkem', 'Total') }}</td>
+    <tr class="items-sum">
+      <td class="right" colspan="4">{{ t('Celkem', 'Total') }}</td>
       <td class="num nowrap">{{ work_report.material_total|number_format(mtotal_dec, decimal_sep, thousand_sep) }} {{ invoice.currency }}</td>
     </tr>
   </tbody>
 </table>
 {% endif %}
 
-<div class="footer">
-  <span class="footer-name">{{ supplier.company_name }}</span>{% if supplier.web %}<span class="footer-dot">&#160;·&#160;</span><a href="{{ supplier.web }}" class="footer-link">{{ supplier.web|replace({'https://': '', 'http://': ''})|trim('/') }}</a>{% endif %}{% if supplier.email %}<span class="footer-dot">&#160;·&#160;</span>{{ supplier.email }}{% endif %}
-</div>
+<table class="doc-footer">
+  {% if supplier.commercial_register %}
+  <tr>
+    <td colspan="2" class="footer-register">{{ supplier.commercial_register }}</td>
+  </tr>
+  {% endif %}
+  <tr{% if supplier.commercial_register %} class="has-register"{% endif %}>
+    <td class="footer-issued">
+      <span class="footer-name">{{ supplier.company_name }}</span>
+      {%- if supplier.web %} · <a href="{{ supplier.web }}">{{ supplier.web|replace({'https://': '', 'http://': ''})|trim('/') }}</a>{% endif -%}
+      {%- if supplier.email %} · {{ supplier.email }}{% endif -%}
+    </td>
+    <td class="footer-page">{{ t('Strana', 'Page') }} {PAGENO}/{nbpg}</td>
+  </tr>
+</table>
 
 </body>
 </html>

@@ -1,508 +1,454 @@
-/* MyUcto.cz — CSS pro PDF render faktury (mPDF kompatibilní) */
-/* @page se NEPOUŽÍVÁ — A4 + margins jsou nastaveny v Mpdf konstruktoru. */
+/* MyUcto.cz — CSS obchodních dokladů pro mPDF render.
+   Sází vystavenou fakturu (invoice/invoice.twig), přijatou fakturu
+   (purchase-invoice/purchase-invoice.twig) a výkaz víceprací (invoice/work_report.twig).
+
+   @page se NEPOUŽÍVÁ — A4 + margins jsou nastaveny v Mpdf konstruktoru každého
+   rendereru. Doklad počítá s okraji 9.5 / 11.8 / 5 / 20 mm (L/R/T/B), tedy se
+   šířkou sazby 188.7 mm; kdo okraje změní, rozhodí sloupcovou mřížku níže.
+
+   ── Barevný systém ────────────────────────────────────────────────────────────
+   Doklad je achromatický. Černá je VÝHRADNĚ text, #DCDCDC VÝHRADNĚ linky, rámečky
+   a podklad hlavičky tabulky. Žádná třetí barva — ani na dobropis, ani na branding
+   dodavatele: typ dokladu říká jeho popisek, ne odstín. Doklad se čte stejně na
+   monitoru i po tisku na černobílé tiskárně, což je to jediné prostředí, ve kterém
+   ho příjemce zaručeně otevře.
+
+   Rozměry jsou v pt (písmo, linky) a mm (mřížka) — přesně tak je měřená předloha.
+
+   ── mPDF ──────────────────────────────────────────────────────────────────────
+   Layout stojí na tabulkách. Flexbox ani grid mPDF neumí a `display:inline-block`
+   zvládá jen u drobných prvků, takže rámečky (číslo dokladu, QR) jsou tabulky.
+*/
+
+/* ═══ ZÁKLAD ═══════════════════════════════════════════════════════════════ */
 
 body {
-    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
-    font-size: 10pt;
-    color: #15131D;
-    line-height: 1.4;
+    /* Selawik = metricky kompatibilní náhrada Segoe UI (viz MpdfFontConfig).
+       Musí stát i tady: CSS přebíjí mPDF `default_font`, který zůstal Montserrat
+       kvůli reportům. */
+    font-family: 'selawik', 'dejavusans', sans-serif;
+    font-size: 8pt;
+    line-height: 1.5;
+    color: #000000;
     margin: 0;
     padding: 0;
 }
 
 * { box-sizing: border-box; }
 
-/* ─── HLAVIČKA ─── */
-.head {
+h1, h2, h3 { font-size: 8pt; font-weight: bold; margin: 0; padding: 0; }
+
+a { color: #000000; text-decoration: none; }
+
+.nowrap { white-space: nowrap; }
+.right  { text-align: right; }
+.left   { text-align: left; }
+.center { text-align: center; }
+.num    { text-align: right; }
+
+/* Kurzíva na dokladu není — Selawik ji nemá a mPDF by ji falšoval sklonem.
+   Pravidlo hlídá `<em>`/`<i>` propašované z uživatelského textu. */
+em, i { font-style: normal; font-weight: bold; }
+
+/* Vertikální mezery. mPDF uvnitř buněk nespolehlivě collapsuje margin, proto se
+   odsazení dělá prázdnými divy s vynucenou výškou (`&nbsp;` uvnitř). */
+.spacer-2 { font-size: 2pt;   line-height: 1; }
+.spacer-3 { font-size: 1.5pt; line-height: 1; }
+.spacer-4 { font-size: 4pt;   line-height: 1; }
+.spacer-5 { font-size: 6pt;   line-height: 1; }
+
+.page-break { page-break-before: always; }
+
+/* ═══ HLAVIČKA DOKLADU ═════════════════════════════════════════════════════
+   Dvousloupcová mřížka se svislou dělicí linkou na 93.8 mm. Vlevo dodavatel
+   a jeho kontakty, vpravo typ dokladu s číslem v rámečku a pod ním odběratel.
+   Odběratel sedí NÍŽ než dodavatel — záměr předlohy, ne chyba zarovnání: oko
+   tak čte doklad do písmene Z (kdo → komu → za co).                         */
+
+table.head {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 7mm;
-    border-bottom: 1.5pt solid #3B2D83;
+    margin: 0;
 }
-/* Dobropis — červený header pro vizuální odlišení */
-.head.credit-note {
-    border-bottom-color: #D45B5B;
+table.head td { vertical-align: top; padding: 0; }
+
+table.head td.head-left {
+    width: 93.8mm;
+    border-right: 0.5pt solid #DCDCDC;
+    padding-right: 4mm;
 }
-.head.credit-note .brand-name,
-.head.credit-note .doc-type {
-    color: #D45B5B;
-}
-.head.cancellation {
-    border-bottom-color: #7A748C;
-}
-.head.cancellation .brand-name,
-.head.cancellation .doc-type {
-    color: #7A748C;
-    text-decoration: line-through;
-}
-.head td { vertical-align: middle; padding-bottom: 4mm; }
-td.logo { width: 55%; }
-td.logo img { max-width: 60mm; max-height: 20mm; }
-/* Logo + název firmy vedle sebe (opt-in pdf_logo_show_name) — název je SOUSEDNÍ buňka
-   .head tabulky, ne vnořená tabulka (ta v mPDF rozbíjela border-collapse spodní čáru).
-   Logo-cell se zúží na obsah (width:1%) + padding-right = mezera k názvu. */
-/* Logo + název firmy vedle sebe (opt-in pdf_logo_show_name): dvě sousední buňky .head,
-   žádná vnořená tabulka (ta v mPDF mazala spodní čáru hlavičky). Mezeru dělá pevná
-   šířka buňky loga — mPDF na buňce respektuje `width`, ne padding. */
-td.logo-img-cell { width: 18mm; }
-/* mPDF neaplikuje max-width/max-height ze stylopisu na <img> — tenhle blok platí jen
-   pro HTML náhled. V PDF musí být stejné hodnoty INLINE na <img> v šabloně (issue #37,
-   bez nich se logo vykreslilo v nativní velikosti a roztáhlo hlavičku). Drž je v páru. */
-td.logo-img-cell img { max-width: 16mm; max-height: 18mm; }
-td.logo-name {
-    white-space: nowrap;
-    font-size: 14pt;
-    font-weight: bold;
-    color: #15131D;
-    line-height: 1.2;
-}
-td.meta { width: 45%; text-align: right; }
-.brand-name {
-    font-size: 16pt;
-    font-weight: bold;
-    color: #3B2D83;
-    line-height: 1.1;
-    white-space: nowrap;
-    letter-spacing: -0.2pt;
-}
+table.head td.head-right { padding-left: 16.4mm; }
+
+/* Odstup mezi hlavičkou s číslem dokladu a blokem odběratele. mPDF na <div>
+   ignoruje `height`, `margin-top` za tabulkou i `line-height` — výšku prázdného
+   řádku řídí výhradně `font-size` (stejný trik jako .spacer-*). Odběratel tak má
+   na dokladu stálou pozici bez ohledu na to, kolik řádků zabral dodavatel
+   v protějším sloupci. */
+.head-gap { font-size: 76pt; line-height: 1; }
+
+/* Typ dokladu a číslo v rámečku na jednom řádku: popisek vlevo, rámeček na
+   pravém okraji sazby. */
+table.doc-title { width: 100%; border-collapse: collapse; }
+table.doc-title td { vertical-align: top; padding: 0; }
+td.doc-number { text-align: right; }
+
 .doc-type {
     font-size: 11pt;
     font-weight: bold;
-    color: #3B2D83;
-    margin-bottom: 1mm;
     line-height: 1.2;
+}
+
+/* Rámeček čísla dokladu. Tabulka, ne inline-block — mPDF jinak rámeček
+   nevykreslí kolem obsahu, ale kolem celého řádku. */
+table.num-box {
+    width: 33mm;
+    border: 0.8pt solid #DCDCDC;
+    border-collapse: collapse;
+    margin-left: auto;
+}
+table.num-box td {
+    padding: 1.2mm 3mm;
+    font-size: 11pt;
+    font-weight: bold;
+    line-height: 1.2;
+    text-align: center;
     white-space: nowrap;
 }
-.varsymbol-big {
-    font-size: 22pt;
+
+/* Storno se pozná řezem písma, ne barvou: přeškrtnutý titulek říká „neplatí"
+   i po černobílém tisku. */
+.head.cancellation .doc-type,
+.head.cancellation table.num-box td { text-decoration: line-through; }
+
+/* Čárový kód s číslem dokladu pod rámečkem (Code128, mPDF tag <barcode>). */
+.barcode-wrap { text-align: right; margin-top: 1.2mm; }
+
+.parent-ref { font-size: 8pt; margin-top: 1.5mm; text-align: right; }
+
+/* ISDOC badge (doklad s přiloženým strojovým souborem) a badge rekonstrukce
+   přijaté faktury. Stojí nad popiskem strany, takže bez nich se blok posune. */
+.isdoc-badge,
+.reconstruction-badge {
+    display: inline-block;
+    border: 0.8pt solid #DCDCDC;
+    padding: 0.4mm 1.8mm;
+    font-size: 6.75pt;
     font-weight: bold;
-    color: #15131D;
-    font-family: 'geistmono', monospace;
-    line-height: 1.05;
-    letter-spacing: -0.5pt;
+    line-height: 1.3;
+    margin-bottom: 1.8mm;
 }
-.parent-ref {
-    font-size: 9pt;
-    color: #7A748C;
+
+/* ═══ STRANY ═══════════════════════════════════════════════════════════════ */
+
+.party-label { font-size: 8pt; font-weight: bold; }
+.party-name  { font-size: 8pt; font-weight: bold; }
+.ic-dic      { font-size: 8pt; }
+/* IČO a DIČ vedle sebe na jednom řádku — předloha je nesází pod sebe. */
+.ic-dic .dic-gap { padding-left: 7mm; }
+
+/* Kontaktní údaje dodavatele — popisek a hodnota na pevných osách, aby e-mail
+   a telefon začínaly stejně bez ohledu na délku popisku. */
+table.contact { border-collapse: collapse; margin-top: 3.5mm; }
+table.contact td { padding: 0; vertical-align: top; font-size: 8pt; }
+td.contact-label { width: 16.7mm; }
+
+/* ═══ ZPŮSOB ÚHRADY ════════════════════════════════════════════════════════
+   Samostatný řádek nad platebním pruhem, stále v levém sloupci — dělicí linka
+   pokračuje. Hodnota je tučná: je to údaj, ne popisek.                      */
+
+/* Řádek je součástí `table.head` (viz šablona) — dělicí linka je border jeho levé
+   buňky a navazuje tak na blok stran bez přetržení. Odstup dělá padding buňky. */
+table.head td.paymethod-left {
+    width: 93.8mm;
+    border-right: 0.5pt solid #DCDCDC;
+    padding: 14.6mm 4mm 1.5mm 0.8mm;
+    vertical-align: bottom;
+}
+.paymethod-label { padding-right: 5mm; }
+.paymethod-value { font-weight: bold; }
+
+/* ═══ PLATEBNÍ PRUH ════════════════════════════════════════════════════════
+   Bankovní účet | Symbol | Datum přes celou šířku sazby, ohraničený linkou
+   nahoře i dole. Sloupce mají pevné osy, aby se hodnoty nerozjely podle délky
+   čísla účtu. Stejný pruh nese i přijatá faktura.                           */
+
+table.payband {
+    width: 100%;
+    border-collapse: collapse;
     margin-top: 1mm;
 }
-.isdoc-badge {
-    display: inline-block;
-    margin-top: 2mm;
-    padding: 0.5mm 2mm;
-    font-size: 7pt;
-    font-weight: bold;
-    letter-spacing: 0.3pt;
-    color: #3B2D83;
-    background: #EFEAFF;
-    border: 0.4pt solid #C6BCE8;
-    border-radius: 1.5mm;
-    line-height: 1.4;
+/* Vodorovné linky pruhu patří na BUŇKY — mPDF je na <table> při border-collapse
+   nevykreslí a pruh by zůstal bez orámování. */
+table.payband td.payband-bank,
+table.payband td.payband-symbol,
+table.payband td.payband-date {
+    border-top: 0.8pt solid #DCDCDC;
+    border-bottom: 0.8pt solid #DCDCDC;
 }
-
-/* ─── STRANY (dodavatel / odběratel) ─── */
-.parties {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 5mm;
-}
-.parties td {
-    width: 50%;
+table.payband td.payband-bank,
+table.payband td.payband-symbol,
+table.payband td.payband-date {
+    padding: 3.4mm 0 3.7mm 0;
     vertical-align: top;
-    padding: 4mm;
-    background: #FBFAFD;
 }
-/* Odběratel zvýrazněn jen podbarvením (bez rámečku) — na dokladu „skočí do oka" víc
-   než blok dodavatele. Default bg zrcadlí akcentovou plochu (ISDOC badge); při
-   zapnutém brandingu ho PdfBranding přebarví tintem zvolené barvy
-   (`.parties td.party-customer`), takže respektuje uživatelskou paletu. */
-.parties td.party-customer {
-    background: #EFEAFF;
-}
-.parties h2 {
-    margin: 0 0 4mm;
-    font-size: 9pt;
-    text-transform: uppercase;
-    letter-spacing: 1pt;
-    color: #6753AE;
-    font-weight: bold;
-}
-.party-name {
-    font-size: 12pt;
-    font-weight: bold;
-    margin-bottom: 1mm;
-    line-height: 1.3;
-    color: #15131D;
-}
-.ic-dic {
-    font-family: 'geistmono', monospace;
-    font-size: 9pt;
-    color: #5A5470;
-    margin-top: 5mm;
-    line-height: 1.6;
-}
+td.payband-bank   { width: 88mm; padding-left: 0.8mm; }
+td.payband-symbol { width: 49.3mm; }
+/* Datum je poslední sloupec; pravý okraj pruhu dělá jeho svislá linka. */
+td.payband-date   { border-right: 0.8pt solid #DCDCDC; }
 
-/* ─── METADATA ─── */
-.meta-grid {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 5mm;
-    font-size: 9.5pt;
-}
-.meta-grid td {
-    padding: 1.6mm 3mm;
-    vertical-align: top;
-    border-bottom: 0.5pt solid #E7E3EE;
-}
-.meta-grid tr:last-child td {
-    border-bottom: none;
-}
-td.meta-label {
-    width: 32mm;
-    color: #6753AE;
-    font-size: 8.5pt;
+.payband-title {
+    font-size: 8pt;
     font-weight: bold;
-    white-space: nowrap;
-    letter-spacing: 0.2pt;
+    margin-bottom: 2.2mm;
 }
-td.meta-value {
+.payband-line {
+    font-size: 8.25pt;
     font-weight: bold;
+    line-height: 1.5;
     white-space: nowrap;
 }
-td.meta-value.mono { font-family: 'geistmono', monospace; }
+/* Doklad bez bankovního spojení (hotovost, karta, uhrazeno) pruh pořád má —
+   v prvním sloupci místo účtu stojí věta o způsobu úhrady. */
+.payband-note { font-size: 8pt; font-weight: normal; line-height: 1.5; }
 
-/* Univerzální — zákaz wrap pro číselné buňky */
-.nowrap { white-space: nowrap; }
+/* Dvojice popisek/hodnota ve sloupcích Symbol a Datum. Popisek lehký, hodnota
+   tučná — pruh se čte po hodnotách, popisky jsou jen navigace. */
+table.payband-pairs { border-collapse: collapse; }
+table.payband-pairs td {
+    padding: 0;
+    font-size: 8.25pt;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+td.pair-label {
+    font-size: 8pt;
+    font-weight: normal;
+    width: 18mm;
+}
+td.pair-value { font-weight: bold; }
 
-/* Spacery — mPDF v tabulkových buňkách neaplikuje margin/padding na <div> spolehlivě.
-   Používáme &nbsp; obsah + explicit font-size, aby div dostal zaručenou výšku. */
-.spacer-2 { font-size: 6pt; line-height: 1; }
-.spacer-3 { font-size: 9pt; line-height: 1; }
-.spacer-4 { font-size: 12pt; line-height: 1; }
-.spacer-5 { font-size: 15pt; line-height: 1; }
+/* ═══ ÚVODNÍ VĚTA A POZNÁMKY ═══════════════════════════════════════════════ */
 
-/* ─── POLOŽKY ─── */
+.intro { margin: 6.6mm 0 5.5mm 0.8mm; font-size: 8pt; }
+
+/* Poznámka dodavatele + právní doložky (RC, OSS, § 31a). Doložka NENÍ dekorace,
+   je to povinná náležitost dokladu — sází se stejným stupněm jako tělo, aby ji
+   nikdo nečetl jako drobný tisk. */
+.note {
+    margin: 3mm 0 0 0.8mm;
+    font-size: 8pt;
+    line-height: 1.45;
+}
+.note-above { margin-bottom: 2.5mm; }
+.note-below { margin-top: 3mm; }
+.rc-note, .oss-note, .proforma-note, .schedule-note { margin-top: 3.5mm; }
+
+/* ═══ POLOŽKY ══════════════════════════════════════════════════════════════
+   Hlavička je podbarvený pruh, řádky oddělují vlasové linky POD každým řádkem
+   (i pod posledním — pruh položek tím dostane zřetelný spodní okraj).       */
+
 table.items {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 5mm;
-    font-size: 9pt;
 }
 table.items th {
-    background: #3B2D83;
-    color: #FFFFFF;
-    font-size: 8.5pt;
-    text-transform: uppercase;
-    letter-spacing: 0.5pt;
-    padding: 2.8mm 2.5mm;
-    text-align: left;
-    font-weight: 700;
-}
-table.items td {
-    padding: 2.8mm 2.5mm;
-    border-bottom: 0.3pt solid #E7E3EE;
-    vertical-align: top;
-}
-table.items tr:nth-child(even) td { background: #FBFAFD; }
-table.items .num { text-align: right; font-family: 'geistmono', monospace; }
-table.items .center { text-align: center; }
-/* DPH sloupec je užší (místo dostal Cena/j) — sazba „21 %" / „12,5 %" o stupínek
-   menší, aby se vešla bez zalomení. */
-table.items .vat { font-size: 8.5pt; }
-
-/* ─── SUMACE ─── */
-.totals {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 5mm;
-}
-.totals td { vertical-align: top; padding: 0; }
-.totals .left { width: 55%; padding-right: 4mm; }
-.totals .right { width: 45%; }
-
-table.totals-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9.5pt;
-}
-table.totals-table td {
-    padding: 1.6mm 3mm;
-}
-td.tot-label {
-    color: #5A5470;
-    text-align: right;
-    font-weight: bold;
-}
-td.tot-num {
-    text-align: right;
-    font-family: 'geistmono', monospace;
-    width: 38mm;
-    font-weight: bold;
-}
-table.totals-table tr.subtotal td {
-    border-top: 0.5pt solid #D2CCDF;
-    font-weight: 600;
-}
-table.totals-table tr.grand td {
-    background: #3B2D83;
-    color: #FFFFFF;
-    font-size: 13pt;
-    font-weight: bold;
-    padding: 3mm;
-}
-table.totals-table tr.grand td.tot-label { color: #FFFFFF; }
-table.totals-table tr.advance td { color: #5A5470; }
-table.totals-table tr.advance td.tot-label { font-style: italic; }
-table.totals-table tr.to-pay td {
-    border-top: 1pt solid #3B2D83;
-    background: #F4F2F8;
-    font-weight: bold;
-    font-size: 12pt;
-    color: #3B2D83;
-    padding: 2.5mm 3mm;
-}
-table.totals-table tr.vat-czk-required td {
-    border-top: 0.5pt solid #D2CCDF;
-    font-size: 8.5pt;
-    color: #5A5470;
-    padding-top: 1.5mm;
-}
-table.totals-table tr.rate-note td.rate-note-cell {
-    text-align: right;
-    font-size: 8.5pt;
-    color: #5A5470;
-    font-style: italic;
-    padding-top: 1.5mm;
-}
-
-/* ─── CZK přepočet (cizí měna) ─── */
-table.czk-recap {
-    width: 60%;
-    margin-left: auto;
-    margin-top: 5mm;
-    border-collapse: collapse;
-    font-size: 9pt;
-    background: #F2F2F2;
-}
-table.czk-recap td {
-    padding: 1.4mm 3mm;
-    background: #F2F2F2;
-}
-table.czk-recap td.czk-recap-title {
-    font-size: 9.5pt;
-    font-weight: bold;
-    color: #3B2D83;
-    border-bottom: 0.5pt solid #C9C0E9;
-    padding-bottom: 1.5mm;
-}
-.czk-recap-rate {
-    font-weight: normal;
-    color: #5A5470;
-    font-size: 8.5pt;
-    margin-left: 2mm;
-}
-table.czk-recap td.tot-label {
-    color: #5A5470;
-    text-align: right;
-    font-weight: bold;
-}
-table.czk-recap td.tot-num {
-    text-align: right;
-    font-family: 'geistmono', monospace;
-    width: 32mm;
-    font-weight: bold;
-}
-table.czk-recap tr.subtotal td {
-    border-top: 0.5pt solid #D2CCDF;
-    background: #EAEAEA;
-}
-table.czk-recap tr.grand td {
     background: #DCDCDC;
-    color: #3B2D83;
-    font-size: 10.5pt;
+    font-size: 7pt;
     font-weight: bold;
-    padding: 2mm 3mm;
-}
-
-/* ─── Platební panel: QR + bankovní spojení v jednom podbarveném boxu ─── */
-.pay-panel {
-    width: 100%;
-    height: 100%;                 /* roztáhne panel na výšku řádku → spodní hrana lícuje s „Celkem" vpravo */
-    border-collapse: collapse;
-    background: #EFEAFF;          /* bgSoft — branding ji přebarví tintem akcentu */
-    border: 0.5pt solid #C9C0E9;  /* lineMedium — sladěno s ostatními akcent. plochami */
-    border-radius: 2mm;
-}
-.pay-panel td {
-    padding: 3.5mm;
-    font-size: 10pt;
-    line-height: 1.5;
-    vertical-align: middle;       /* obsah svisle na střed → vyrovná prázdné místo při roztažení */
-}
-/* Zaplacená faktura: platební panel dostane jemný zelený nádech (success), místo
-   brandového tintu. Vyšší specificita (2 třídy) přebije branding override `.pay-panel`
-   bez ohledu na pořadí — UHRAZENO tak vždy sedí na zeleném podkladu. */
-.pay-panel.pay-panel-paid {
-    background: #EAF6EC;
-    border-color: #BFE0C6;
-}
-/* QR uvnitř panelu — bez vlastního rámečku/paddingu, splývá s podbarvením. */
-.pay-panel td.pay-qr {
-    width: 40mm;
-    text-align: center;
-    white-space: nowrap;
-}
-.pay-panel td.pay-qr img { width: 33mm; height: 33mm; }
-.bank-label {
-    font-size: 9pt;
-    text-transform: uppercase;
-    letter-spacing: 0.8pt;
-    color: #6753AE;
-    font-weight: bold;
-    margin-bottom: 4mm;
+    text-align: left;
+    padding: 1.9mm 2mm;
     line-height: 1.2;
 }
-.bank-value {
-    font-family: 'geistmono', monospace;
+table.items th.num    { text-align: right; }
+table.items th.center { text-align: center; }
+
+table.items td {
+    font-size: 8pt;
+    padding: 1.3mm 2mm;
+    vertical-align: top;
+    border-bottom: 0.375pt solid #DCDCDC;
+    line-height: 1.35;
+}
+table.items th:first-child,
+table.items td:first-child { padding-left: 2.4mm; }
+table.items th:last-child,
+table.items td:last-child  { padding-right: 0; }
+
+/* Řádková částka je jediný údaj tabulky čitelný na dálku → tučně. */
+table.items td.amount { font-weight: bold; font-size: 8.25pt; }
+
+/* Rozpad balení („celkem 240 ks") pod jednotkou — doplněk, ne údaj. */
+.base-qty { font-size: 6.75pt; white-space: nowrap; }
+
+/* Odkaz na výkaz víceprací v popisu položky (interní skok uvnitř PDF). */
+.wr-link { text-decoration: underline; }
+
+/* Součtový řádek (výkaz víceprací, rozpis materiálu) — podbarvení jako hlavička. */
+table.items tr.items-sum td {
+    background: #DCDCDC;
     font-weight: bold;
-    color: #15131D;
-    font-size: 9.5pt;
-    line-height: 1.5;
-    white-space: nowrap;
-}
-.bank-meta-line {
-    font-size: 9pt;
-    color: #5A5470;
-    line-height: 1.6;
+    border-bottom: none;
 }
 
-/* Notes a poznámky */
-.note {
-    margin: 4mm 0;
-    padding: 3mm;
-    background: #FBFAFD;
-    border-left: 2pt solid #6753AE;
-    font-size: 9pt;
-    color: #403B52;
-}
-.rc-note {
-    background: #FDF6E9;
-    border-left: 2pt solid #E8A547;
-    color: #8B6420;
-    font-weight: 600;
-}
-/* OSS doložka — vlastní sémantická barva (modrá „informace o místě plnění"), aby se
-   nepletla s amber RC doložkou a nepřebarvil ji per-supplier branding accent. */
-.oss-note {
-    background: #EEF4FB;
-    border-left: 2pt solid #2F6FA8;
-    color: #1F4E79;
-    font-weight: 600;
-}
+/* ═══ SOUČTY + QR ══════════════════════════════════════════════════════════
+   QR vlevo, součty vpravo — dvě buňky jedné tabulky, aby se svisle nerozjely.
+   U neplátce zbude vpravo jediný řádek „Celkem k úhradě"; rekapitulace sazeb
+   se nad něj vsune jen tehdy, když nějaké sazby jsou.                       */
 
-/* Rozpis plateb platebního kalendáře (§ 31a ZDPH).
-   mPDF kvirky: padding patří do <td>, ne do <div>; žádné nested selectory. */
-.schedule-table {
+table.totals {
     width: 100%;
     border-collapse: collapse;
-    margin: 5mm 0 2mm 0;
+    margin-top: 3mm;
 }
-.schedule-title {
-    font-size: 10pt;
-    font-weight: 700;
-    color: #403B52;
-    padding: 0 0 1.5mm 0;
-    border-bottom: 0.6pt solid #E0DAF0;
+table.totals td.left,
+table.totals td.right { vertical-align: top; padding: 0; }
+/* Součty startují o kus níž než QR vedle nich — částka k úhradě tak leží zhruba
+   ve třetině výšky QR kódu a blok nepůsobí, že se o kód opírá. */
+table.totals td.right { padding-top: 4mm; }
+table.totals td.left  { width: 72mm; }
+table.totals td.right { text-align: right; }
+
+/* QR v rámečku s popiskem — rámeček odděluje kód od bílé plochy, aby ho čtečka
+   našla i na špatně oříznutém tisku. Tabulka, ne inline-block (viz num-box). */
+table.qr-box {
+    border: 0.8pt solid #DCDCDC;
+    border-collapse: collapse;
 }
-.schedule-legal {
-    font-size: 8pt;
-    font-weight: 400;
-    color: #8681A0;
-}
-.schedule-th {
-    font-size: 8pt;
-    font-weight: 600;
-    color: #6E6885;
-    text-align: left;
-    padding: 1.5mm 2mm;
-    border-bottom: 0.4pt solid #E0DAF0;
-}
-.schedule-td {
-    font-size: 9pt;
-    color: #403B52;
-    padding: 1.2mm 2mm;
-    border-bottom: 0.3pt solid #F0EDF7;
-}
-.schedule-total {
-    font-weight: 700;
-    background: #FBFAFD;
-}
-.schedule-empty {
-    font-size: 9pt;
-    color: #8681A0;
-    padding: 2mm;
-}
-.schedule-note {
-    font-size: 8.5pt;
+table.qr-box td { padding: 1.2mm; text-align: center; line-height: 1; }
+/* mPDF ignoruje rozměry obrázku ze stylopisu — šířka/výška MUSÍ být inline na
+   <img> v šabloně. Tohle pravidlo platí jen pro HTML náhled; drž je v páru. */
+table.qr-box img { width: 32mm; height: 32mm; }
+.qr-caption {
+    font-size: 7pt;
+    font-weight: bold;
+    margin-top: 1mm;
+    line-height: 1.2;
 }
 
-/* Footer — podpis dodavatele + zápis v OR */
-.footer {
-    margin-top: 9mm;
-    padding-top: 3.5mm;
-    border-top: 0.6pt solid #E0DAF0;
-    text-align: center;
-    font-size: 8.5pt;
-    color: #6E6885;
-    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
-    letter-spacing: 0.2pt;
+/* Rekapitulace sazeb DPH nad celkovou částkou. Drobnější stupeň — celková
+   částka musí zůstat dominantou bloku. */
+table.vat-recap {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 3mm;
 }
-.footer-name {
-    font-weight: 700;
-    color: #3B2D83;
+table.vat-recap td {
+    font-size: 8pt;
+    padding: 0.4mm 0;
+    text-align: right;
+    white-space: nowrap;
+    line-height: 1.45;
 }
-.footer-dot {
-    color: #C5BFD3;
+td.recap-label { text-align: right; padding-right: 6mm; }
+td.recap-value { width: 41.7mm; }
+/* Souhrnný řádek. Linku dostane jen PRVNÍ řádek skupiny (`recap-sum`); navazující
+   souhrny jsou `recap-sum-cont` — dvě linky nad sebou by jen zdvojily oddělovač. */
+table.vat-recap tr.recap-sum td {
+    font-weight: bold;
+    border-top: 0.375pt solid #DCDCDC;
+    padding-top: 1.2mm;
 }
-.footer a, .footer-link {
-    color: inherit;
-    text-decoration: none;
+table.vat-recap tr.recap-sum-cont td { font-weight: bold; }
+table.vat-recap tr.advance td { padding-top: 1.2mm; }
+
+/* Částka k úhradě. Popisek je zarovnaný doprava ke své buňce, hodnota k pravému
+   okraji sazby — mezi nimi zůstane mezera, která blok drží pohromadě. */
+table.sum-total { width: 100%; border-collapse: collapse; }
+table.sum-total td {
+    font-size: 9.75pt;
+    font-weight: bold;
+    padding: 0;
+    line-height: 1.4;
+    white-space: nowrap;
 }
-.commercial-register {
-    margin-top: 1.8mm;
-    text-align: center;
-    font-size: 7.5pt;
-    color: #A7A0BA;
-    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
-    /* Bez letter-spacingu mPDF na 7.5pt přebíjí kern pár „Pl" tak, že „l" zmizí
-       (např. „v Plzni" → „v P zni"). Drobné rozpáčení glyfy vrátí a zlepší čitelnost. */
+td.sum-label { text-align: right; }
+td.sum-value { text-align: right; width: 41.7mm; }
+
+/* Rekapitulace v CZK u dokladu v cizí měně (§ 37 ZDPH). Samostatný blok pod
+   součty — je to přepočet, ne další částka k úhradě, a nesmí s ní splynout. */
+.czk-recap {
+    margin-top: 5mm;
+    border-top: 0.375pt solid #DCDCDC;
+    padding-top: 2mm;
+    font-size: 8pt;
+}
+.czk-recap-title  { font-weight: bold; margin-bottom: 1.5mm; }
+.czk-recap-rate   { font-weight: normal; }
+.vat-czk-required { margin-top: 1.5mm; }
+.rate-note        { font-size: 7pt; margin-top: 1.5mm; }
+.rate-note-cell   { text-align: right; }
+
+/* ═══ ROZPIS PLATEB (§ 31a ZDPH) ═══════════════════════════════════════════ */
+
+.schedule-title { font-size: 8pt; font-weight: bold; margin: 5mm 0 2mm 0.8mm; }
+table.schedule-table { width: 100%; border-collapse: collapse; }
+.schedule-th {
+    background: #DCDCDC;
+    font-size: 7pt;
+    font-weight: bold;
+    text-align: left;
+    padding: 1.9mm 2mm;
+}
+.schedule-th.right { text-align: right; }
+.schedule-td {
+    font-size: 8pt;
+    padding: 1.3mm 2mm;
+    border-bottom: 0.375pt solid #DCDCDC;
+}
+.schedule-head  { font-weight: bold; }
+.schedule-total td { font-weight: bold; }
+.schedule-empty { font-size: 8pt; padding: 2mm; }
+.schedule-legal { font-size: 7pt; font-weight: normal; margin-top: 2mm; }
+
+/* ═══ VÝKAZ VÍCEPRACÍ ══════════════════════════════════════════════════════ */
+
+.wr-title   { font-size: 11pt; font-weight: bold; margin-bottom: 1mm; }
+.wr-meta    { font-size: 8pt; margin-bottom: 4.5mm; }
+.wr-section { font-size: 8pt; font-weight: bold; margin: 6mm 0 2mm 0.8mm; }
+
+/* ═══ PATIČKA ══════════════════════════════════════════════════════════════
+   Opakuje se na každé straně (mPDF <htmlpagefooter>). Nese zápis v rejstříku,
+   kdo doklad vystavil, attribution a číslo strany.                          */
+
+table.doc-footer {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 6.75pt;
+    line-height: 1.4;
+}
+table.doc-footer td {
+    padding: 1.4mm 0 0 0;
+    font-size: 6.75pt;
+    vertical-align: bottom;
+}
+/* Oddělovací linka patří na BUŇKY — border-top na <div> uvnitř
+   <htmlpagefooter> mPDF nevykreslí a patička by zůstala bez oddělovače. */
+table.doc-footer td.footer-register,
+table.doc-footer td.footer-issued,
+table.doc-footer td.footer-attribution,
+table.doc-footer td.footer-page { border-top: 0.375pt solid #DCDCDC; }
+/* Když doklad nese zápis v rejstříku, linku drží ON a spodní řádek už ne. */
+table.doc-footer tr.has-register td.footer-issued,
+table.doc-footer tr.has-register td.footer-attribution,
+table.doc-footer tr.has-register td.footer-page { border-top: none; }
+
+table.doc-footer td.footer-register {
+    padding-bottom: 3mm;
+    /* Bez rozpáčení mPDF na 6.75 pt přebíjí kern pár „Pl" tak, že „l" zmizí
+       („v Plzni" → „v P zni"). Drobný letter-spacing glyfy vrátí. */
     letter-spacing: 0.15pt;
 }
-/* mPDF htmlpagefooter — attribution na patě KAŽDÉ stránky */
-.page-attribution {
-    text-align: center;
-    font-size: 7pt;
-    color: #C5BFD3;
-    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
-}
-.page-attribution a {
-    color: #A7A0BA;
-    text-decoration: none;
-}
+td.footer-issued      { text-align: left; }
+td.footer-attribution { text-align: center; }
+td.footer-page        { text-align: right; white-space: nowrap; }
 
-/* Stránkování — výkaz víceprací na nové straně */
-.page-break { page-break-before: always; }
+.page-attribution { font-size: 6.75pt; }
 
-/* ─── VÝKAZ VÍCEPRACÍ ─── */
-/* Nadpis výkazu (byl inline ve šabloně — vytaženo do třídy kvůli branding override). */
-.wr-title {
-    font-size: 11pt;
-    font-weight: bold;
-    color: #3B2D83;
-    margin-bottom: 1mm;
+/* Patička samostatného výkazu víceprací (neběží přes <htmlpagefooter>). */
+.footer {
+    margin-top: 6mm;
+    border-top: 0.375pt solid #DCDCDC;
+    padding-top: 1.5mm;
+    font-size: 6.75pt;
 }
-/* Proklikávací popis položky faktury → odkaz na stránku s výkazem (podtržený). */
-.wr-link {
-    color: #3B2D83;
-    text-decoration: underline;
-}
+.footer-name { font-weight: bold; }

@@ -16,6 +16,16 @@ use Mpdf\Config\FontVariables;
  * Monospace (částky, varsymboly, IBANy, datumy) je Geist Mono (SIL OFL) —
  * tabulkové číslice → zarovnání číselných sloupců.
  *
+ * Selawik (SIL OFL, Microsoft) je písmo OBCHODNÍCH DOKLADŮ — vystavená faktura,
+ * přijatá faktura a výkaz víceprací, tedy vše, co sází `styles/invoice.css`.
+ * Je to metricky kompatibilní náhrada Segoe UI; doklad tím sedí na předlohu, podle
+ * které je layout navržený. Řezy jen R/B — kurzíva v dokladech není (a Selawik ji
+ * nemá, takže ji ani omylem nejde použít). Číslice jsou tabulkové, takže číselné
+ * sloupce dokladu drží zarovnání i bez monospace, a nula je plná kulatá (viz níže).
+ *
+ * Reporty, Kniha DPH, mzdy a kniha jízd zůstávají na Montserratu — `default_font`
+ * se nemění, doklady si Selawik berou přes `font-family` v CSS.
+ *
  * ⚠️ Nula NESMÍ být tečkovaná. Předchozí JetBrains Mono má uprostřed nuly tečku,
  * která se v 8 pt a zvlášť po tisku na papír slévá s obvodem číslice → 0 se čte
  * jako 8 (issue #35: varsymbol 26088 čten jako 26888, částka 105 400 jako 105 488).
@@ -25,6 +35,8 @@ use Mpdf\Config\FontVariables;
  *
  * Geist Mono je zároveň mono font aplikace (web/src/styles/fonts.css) — doklad
  * a obrazovka sázejí čísla stejně. Při výměně fontu drž obě strany v páru.
+ * Doklady na Selawiku mono nepoužívají: tabulkové číslice řeší zarovnání a kulatá
+ * nula Selawiku vyhovuje pravidlu výše (netečkovaná), takže disambiguátor nemizí.
  *
  * DejaVu Sans zůstává jako jediný `backupSubsFont` pro glyfy, které Montserrat
  * nemá (✓ ✗ ◆ ⚠ …). Monospace pasáže jedou přes Geist Mono (vlastní font),
@@ -82,6 +94,15 @@ final class MpdfFontConfig
             'B'  => 'GeistMono-SemiBold.ttf',
             'I'  => 'GeistMono-Regular.ttf',
             'BI' => 'GeistMono-SemiBold.ttf',
+        ];
+        // Písmo obchodních dokladů. Kurzíva se na dokladu nepoužívá a Selawik ji nemá —
+        // I/BI proto míří na R/B, aby případné `font-style:italic` render nezhodilo
+        // (mPDF by jinak hledal neexistující soubor) a jen se ignorovalo.
+        $fontData['selawik'] = [
+            'R'  => 'Selawik-Regular.ttf',
+            'B'  => 'Selawik-Bold.ttf',
+            'I'  => 'Selawik-Regular.ttf',
+            'BI' => 'Selawik-Bold.ttf',
         ];
 
         return [

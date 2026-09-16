@@ -450,13 +450,18 @@ final class InvoicePdfRenderer
 
     private function newMpdf(string $tmpDir): Mpdf
     {
+        // Okraje drží sloupcovou mřížku ze `styles/invoice.css` — dělicí linka na
+        // 93.8 mm, platební pruh a tabulka položek jsou na ně navázané. Kdo je
+        // změní, musí přepočítat i mřížku (komentář v hlavičce stylopisu).
+        // margin_footer < margin_bottom, jinak by patička vlezla do sazby.
         return new Mpdf([
             'mode'              => 'utf-8',
             'format'            => 'A4',
-            'margin_top'        => 15,
-            'margin_bottom'     => 18,
-            'margin_left'       => 12,
-            'margin_right'      => 12,
+            'margin_top'        => 6.6,
+            'margin_bottom'     => 20,
+            'margin_left'       => 9.5,
+            'margin_right'      => 11.8,
+            'margin_footer'     => 4.4,
             'tempDir'           => $tmpDir,
             'autoPageBreak'     => true,
             ...MpdfFontConfig::options(),
